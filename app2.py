@@ -1,21 +1,47 @@
-# app_rebuild.py
+# app_direct_dropbox.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 import dropbox
 import io
+import requests
 
-# ==========================
-# Dropbox 設定
-# ==========================
-DROPBOX_TOKEN = "sl.u.AGHzs4C-L4fVJPfn951Z21Wg4J98jJgpZq9fOPp84vfulXXJogNCJGPA968WxOuwR4qo_nsEYj_XAtNeCom2P3xgD0AQPmWiTMAl-r31yCPkB-GnTL4prmkyQRubJNYiS4p9FY-a99haFqOWkJ7HvKvV9z-rhYD-CjO_ji5yZCVpb0nZ6hE94oacCJnGUKouM6AARVtW2ezUgvs4Nrbq8dcf7RvqfyiGfWW6NjAc7RpxuEIs7quU5flVgQHcSQvYC21nJp-01E85BUHyvARuv_um83fAKMc70_mBgiQwZZgxmPOE1DIbWS1MuN68d_0Bi1B9p2V0xpX9F4-Z_y33G6avuEe5-5bqHdNWuWVuciN9sNp_ICpvqIg4D6ea7lQO_H788JOAftoGDo-s0uKGlwA7UVlM_uSjs5tN2K55nrzJOcLgWnMfeCflTqIVeXX84cR7Q-aVD5FJB2qnq6WMsPuNZxJ7eVqb5NAEoM3esm4i_T5PoyTR5rW98FMDVaWyIu0MbgGWP1_DTLDsjBQ9Z8zlqmg0Sxa7Oa0ES6Oop3r3Lcch3Ia0IDZyWgcwdOCcF02pFJ786wr5y8Q-OoEw08dyMj8WWfv7DlPR7Ki3uls6LJ_eAGBltYv_bgN6fRFXe4jdeKVPm7Vi-0s2JjeQEXF-PXa2QXcZ4tA-Nj19Nr6FzsX3lmsTtUo7apXGhUvvMqCJmgPZiEJbwKw7XLlrf9cmlFYqWWOi_jY4KGcAefw1yeSfg83gQmvO4Bm14Wf3YGXaSLwpogY2H843xhneCYbwCDLXO4gIighSFUNehpupRhxzpVnCSe2Q962PozXQ31ZUQNXBMKZPU0MNvP_8UbJQAdX3gbjfnhXthysCw-o3XEaiRMcau4Lsij0CQRV9iyUkBHxOFNn91R6xUdbRRPYVgzDSiK9R5I8eGaZzjX9Ufc9hAxE2wL1GTsmNqodQyHJdrE2DX45uy78y61tAdo-j6nMzF2wQyikkDZaVvlF2wVqSBmaim18qLg1pMvr7H3SJlmHZHxHnhigQx6MKDvmtRSlq9IwoRi-xlure0KjRBWb7ViBleEYvgMyk3N80jjT3GQYDwUuaB55eQDQVMwWGDW2F9G63Zjd3j-612ibOkDFDHl_QygB8fzt05vsM-esE_eTlA_ev3xIaXCdZHIMnckNiB5F2t_6bcXoHpx_9K9M_YtwRGEHlpNBSJywOuHDAAgAWs2eyf8Fq2rXfHqw6vXxI4Iez9GDWz4kPTmQpszaBz-jPNKu3US900cWJ1yU"
+# ================================
+# Dropbox 設定（直接ハードコーディング）
+# ================================
+APP_KEY = "jl6ot0jkupqwj5o"  # ここに自分のApp Key
+APP_SECRET = "7gt6s2j08hxwtc8"          # ここに自分のApp Secret
+REFRESH_TOKEN = "HiSMjRKn0I0AAAAAAAAAAT47w1YQ5_Ke_d2MLkChV4k2o7-qz8heFrk1h2oScnSc"  # 取得したRefresh Token
 DROPBOX_FOLDER = "/釣りアプリ"
 CSV_PATH = f"{DROPBOX_FOLDER}/voyage_records.csv"
-dbx = dropbox.Dropbox(DROPBOX_TOKEN)
 
-# --------------------------
-# CSV読み込み関数
-# --------------------------
+# ================================
+# Dropbox クライアント作成
+# ================================
+def get_dropbox_client():
+    resp = requests.post(
+        "https://api.dropboxapi.com/oauth2/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": REFRESH_TOKEN,
+            "client_id": APP_KEY,
+            "client_secret": APP_SECRET
+        }
+    )
+    if resp.status_code != 200:
+        st.error(f"Dropbox認証エラー: {resp.status_code}")
+        st.write(resp.text)
+        st.stop()
+
+    access_token = resp.json()["access_token"]
+    return dropbox.Dropbox(access_token)
+
+# アプリ起動時にDropboxクライアント作成
+dbx = get_dropbox_client()
+
+# ================================
+# CSV 読み込み関数
+# ================================
 def load_csv_from_dropbox():
     try:
         metadata, res = dbx.files_download(CSV_PATH)
@@ -27,33 +53,31 @@ def load_csv_from_dropbox():
         ])
     return df
 
-# --------------------------
-# CSV保存関数
-# --------------------------
+# ================================
+# CSV 保存関数
+# ================================
 def save_csv_to_dropbox(df):
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
     dbx.files_upload(csv_buffer.getvalue().encode("utf-8"), CSV_PATH, mode=dropbox.files.WriteMode.overwrite)
 
-# --------------------------
+# ================================
 # 写真アップロード関数
-# --------------------------
+# ================================
 def upload_to_dropbox(file):
     path = f"{DROPBOX_FOLDER}/{file.name}"
     dbx.files_upload(file.read(), path, mode=dropbox.files.WriteMode.overwrite)
     shared_link = dbx.sharing_create_shared_link_with_settings(path)
-    return shared_link.url.replace("?dl=0", "?dl=1")
+    return shared_link.url.replace("?dl=0", "?raw=1")
 
-# ==========================
-# Streamlit設定
-# ==========================
+# ================================
+# Streamlit UI
+# ================================
 st.set_page_config(page_title="操船手順書＆航海記録", layout="centered")
 page = st.sidebar.radio("ページ選択", ["手順書", "航海記録入力", "航海記録閲覧"])
 df = load_csv_from_dropbox()
 
-# ==========================
 # ページ①：手順書
-# ==========================
 if page == "手順書":
     st.title("🚤 船舶 操船時 手順書")
     st.markdown("出航前・帰港後の安全確認にご利用ください。")
@@ -64,35 +88,23 @@ if page == "手順書":
         "車のカギ確認","救命胴衣確認","係留ロープ・アンカーの状態確認",
         "天候・潮汐・波高の確認"
     ]
-    for i, step in enumerate(start_steps, start=1):
+    for i, step in enumerate(start_steps, 1):
         st.markdown(f"**{i}. {step}**")
 
-    st.divider()
     st.header("⚓ 帰港後チェック")
     end_steps = [
         "エンジン停止後、冷却状態を確認","燃料漏れ・異音の有無を確認",
         "ブレーカーを降ろす","スクリューを降ろす",
         "係留ロープ・フェンダーの状態確認","備品回収・船内清掃"
     ]
-    for i, step in enumerate(end_steps, start=1):
+    for i, step in enumerate(end_steps, 1):
         st.markdown(f"**{i}. {step}**")
-
-    st.divider()
-    st.header("📘 注意事項")
-    st.markdown("""
-- 操船前には必ずエンジン周辺・燃料系統・電装系の目視確認を行うこと  
-- 無線機の通信確認は他船または陸上局との短時間のテストで行う  
-- 天候が急変した場合は直ちに帰港または安全な避難港へ  
-- 操船記録は毎回残すこと
-""")
 
     st.markdown("---")
     st.markdown("📍 **漁礁ポイント（Googleマップ）** [こちらを開く](https://www.google.com/maps/d/edit?mid=1h6m8fXg0UpW2BKKGzVcydgSmsGPf_Rk&usp=sharing)")
     st.caption("© 2025 操船安全管理マニュアル")
 
-# ==========================
 # ページ②：航海記録入力
-# ==========================
 elif page == "航海記録入力":
     st.title("📝 航海記録入力")
     with st.form("voyage_form"):
@@ -117,23 +129,18 @@ elif page == "航海記録入力":
             }
             df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
             save_csv_to_dropbox(df)
-            st.success("航海記録を Dropbox に保存しました！")
+            st.success("✅ 航海記録を Dropbox に保存しました！")
 
-# ==========================
-# ページ③：航海記録閲覧＋写真表示
-# ==========================
+# ページ③：航海記録閲覧
 elif page == "航海記録閲覧":
     st.title("📂 航海記録閲覧")
-
     tab1, tab2 = st.tabs(["記録一覧", "写真一覧"])
 
-    # --- 記録一覧 ---
     with tab1:
         if df.empty:
             st.info("まだ航海記録はありません。")
         else:
             st.dataframe(df[["出航日","出航時刻","帰港時刻"]])
-            st.markdown("---")
             st.subheader("❌ 記録削除")
             options = [f"{i+1}: {row['出航日']} {row['出航時刻']}" for i, row in df.iterrows()]
             selected_idx = st.selectbox("削除する記録を選択してください", options)
@@ -144,20 +151,18 @@ elif page == "航海記録閲覧":
                 st.success(f"記録 {selected_idx} を削除しました！")
                 st.experimental_rerun()
 
-    # --- 写真一覧 ---
     with tab2:
         st.subheader("📸 Dropbox内の画像一覧")
         try:
             res = dbx.files_list_folder(DROPBOX_FOLDER)
-            image_files = [entry for entry in res.entries 
-                           if isinstance(entry, dropbox.files.FileMetadata) and
-                           entry.name.lower().endswith((".jpg",".jpeg",".png"))]
+            image_files = [entry for entry in res.entries
+                           if isinstance(entry, dropbox.files.FileMetadata)
+                           and entry.name.lower().endswith((".jpg",".jpeg",".png"))]
             if not image_files:
                 st.info("フォルダ内に画像が見つかりません。")
             else:
                 for file in image_files:
                     _, res_file = dbx.files_download(f"{DROPBOX_FOLDER}/{file.name}")
-                    image_bytes = io.BytesIO(res_file.content)
-                    st.image(image_bytes, caption=file.name, use_container_width=True)
+                    st.image(io.BytesIO(res_file.content), caption=file.name, use_container_width=True)
         except dropbox.exceptions.ApiError as e:
             st.error(f"画像取得に失敗しました: {e}")
